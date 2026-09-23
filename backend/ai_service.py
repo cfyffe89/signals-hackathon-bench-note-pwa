@@ -66,7 +66,8 @@ class BenchNoteAIService:
             }],
             "generationConfig": {
                 "responseMimeType": "application/json",
-                "temperature": 0.2
+                "temperature": 0.2,
+                "maxOutputTokens": 1024
             }
         }
 
