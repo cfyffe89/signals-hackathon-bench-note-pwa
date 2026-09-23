@@ -130,11 +130,12 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   } else {
     console.log("Web Speech API not supported on this browser.");
+    micLabel.textContent = "Open in Safari for voice on iPhone";
   }
 
   function startRecording() {
     if (!recognition) {
-      alert("Voice dictation is not supported by your current browser. You can type observations directly into the text box!");
+      alert("Apple restricts voice dictation to Safari on iOS. Please open this link in Mobile Safari to dictate notes hands-free, or type directly in the box below!");
       return;
     }
     try {
