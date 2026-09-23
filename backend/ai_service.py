@@ -74,21 +74,30 @@ class BenchNoteAIService:
                 }
             })
 
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": user_content}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.2,
-            )
-            content = response.choices[0].message.content
-            return json.loads(content)
-        except Exception as e:
-            logger.error(f"AI Gateway invocation failed: {e}. Falling back to mock synthesis.")
-            return self._generate_mock_analysis(transcript, bool(image_bytes), now_str, error=str(e))
+        models_to_try = [self.model]
+        if "gemini-3.6-flash" not in models_to_try:
+            models_to_try.append("gemini-3.6-flash")
+
+        last_error = None
+        for current_model in models_to_try:
+            try:
+                response = self.client.chat.completions.create(
+                    model=current_model,
+                    messages=[
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": user_content}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.2,
+                )
+                content = response.choices[0].message.content
+                return json.loads(content)
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Model {current_model} failed ({e}), attempting next candidate...")
+
+        logger.error(f"All AI Gateway models failed: {last_error}. Falling back to mock synthesis.")
+        return self._generate_mock_analysis(transcript, bool(image_bytes), now_str, error=str(last_error))
 
     def _generate_mock_analysis(
         self,
