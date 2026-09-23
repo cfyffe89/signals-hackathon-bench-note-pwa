@@ -83,12 +83,44 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   function setPhoto(file) {
-    capturedPhotoFile = file;
     const reader = new FileReader();
     reader.onload = (event) => {
-      photoPreview.src = event.target.result;
-      photoPlaceholder.classList.add("hidden");
-      photoPreviewContainer.classList.remove("hidden");
+      const img = new Image();
+      img.onload = () => {
+        // Downscale large camera photos (e.g., 48MP / 15MB mobile photos) to fast ~150KB JPEG
+        const maxDim = 1280;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob((blob) => {
+          capturedPhotoFile = new File([blob], "bench_photo.jpg", { type: "image/jpeg" });
+          photoPreview.src = canvas.toDataURL("image/jpeg", 0.85);
+          photoPlaceholder.classList.add("hidden");
+          photoPreviewContainer.classList.remove("hidden");
+          console.log(`Mobile photo compressed: ${file.size} -> ${blob.size} bytes (${width}x${height})`);
+        }, "image/jpeg", 0.85);
+      };
+      img.onerror = () => {
+        capturedPhotoFile = file;
+        photoPreview.src = event.target.result;
+        photoPlaceholder.classList.add("hidden");
+        photoPreviewContainer.classList.remove("hidden");
+      };
+      img.src = event.target.result;
     };
     reader.readAsDataURL(file);
   }
@@ -227,6 +259,10 @@ document.addEventListener("DOMContentLoaded", () => {
         method: "POST",
         body: formData
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ detail: "Unknown server error" }));
+        throw new Error(errData.detail || `Server error ${res.status}`);
+      }
       const data = await res.json();
       
       if (data.status === "success") {
@@ -260,7 +296,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } catch (err) {
       console.error(err);
-      alert("Failed to analyze note. Check console / backend logs.");
+      alert("Failed to analyze note: " + (err.message || err));
     } finally {
       analyzeBtn.disabled = false;
       analyzeBtn.innerHTML = '<span>✨ Synthesize with Gemini Flash</span>';

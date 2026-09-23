@@ -66,15 +66,36 @@ async def analyze_bench_note(
     photo: Optional[UploadFile] = File(None)
 ):
     """
-    Step 1 of 2: Uses Gemini 2.0 Flash to synthesize voice transcript + photo
+    Step 1 of 2: Uses Gemini 3.5 Flash to synthesize voice transcript + photo
     into a structured scientific observation for the scientist to review.
     """
     image_bytes = None
     mime_type = "image/jpeg"
 
     if photo:
-        image_bytes = await photo.read()
-        mime_type = photo.content_type or "image/jpeg"
+        raw_bytes = await photo.read()
+        logger.info(f"Received photo upload: {photo.filename} ({len(raw_bytes)} bytes, content_type={photo.content_type})")
+        try:
+            import io
+            from PIL import Image, ImageOps
+            with Image.open(io.BytesIO(raw_bytes)) as pil_img:
+                # Correct iOS camera orientation
+                pil_img = ImageOps.exif_transpose(pil_img)
+                pil_img = pil_img.convert("RGB")
+                max_dim = 1600
+                if max(pil_img.size) > max_dim:
+                    pil_img.thumbnail((max_dim, max_dim))
+                buf = io.BytesIO()
+                pil_img.save(buf, format="JPEG", quality=85)
+                image_bytes = buf.getvalue()
+                mime_type = "image/jpeg"
+                logger.info(f"Normalized mobile image to JPEG: {len(image_bytes)} bytes ({pil_img.size})")
+        except Exception as img_err:
+            logger.warning(f"Image normalization warning: {img_err}, using raw bytes")
+            image_bytes = raw_bytes
+            mime_type = photo.content_type or "image/jpeg"
+
+    logger.info(f"Synthesizing note: transcript='{transcript[:80]}...', has_image={bool(image_bytes)}")
 
     try:
         analysis = ai_service.analyze_observation(
@@ -82,6 +103,7 @@ async def analyze_bench_note(
             image_bytes=image_bytes,
             mime_type=mime_type
         )
+        logger.info(f"Synthesis complete! Source: {analysis.get('source')}, Title: {analysis.get('title')}")
         return {"status": "success", "analysis": analysis}
     except Exception as e:
         logger.error(f"Analysis error: {e}")
