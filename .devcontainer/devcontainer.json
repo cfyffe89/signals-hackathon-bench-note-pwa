@@ -9,7 +9,8 @@
         "Continue.continue"
       ],
       "settings": {
-        "python.defaultInterpreterPath": "/usr/local/bin/python"
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.terminal.useEnvFile": true
       }
     }
   },
