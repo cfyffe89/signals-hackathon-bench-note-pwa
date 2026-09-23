@@ -67,7 +67,7 @@ class BenchNoteAIService:
             "generationConfig": {
                 "responseMimeType": "application/json",
                 "temperature": 0.2,
-                "maxOutputTokens": 1024
+                "maxOutputTokens": 2048
             }
         }
 
@@ -82,7 +82,7 @@ class BenchNoteAIService:
         for current_model in models_to_try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_model}:generateContent?key={self.api_key}"
             try:
-                res = requests.post(url, json=payload, timeout=25)
+                res = requests.post(url, json=payload, timeout=60)
                 if res.status_code == 200:
                     text_out = res.json()["candidates"][0]["content"]["parts"][0]["text"]
                     parsed = json.loads(text_out)

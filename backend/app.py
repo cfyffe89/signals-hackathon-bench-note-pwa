@@ -82,11 +82,11 @@ async def analyze_bench_note(
                 # Correct iOS camera orientation
                 pil_img = ImageOps.exif_transpose(pil_img)
                 pil_img = pil_img.convert("RGB")
-                max_dim = 1600
+                max_dim = 800
                 if max(pil_img.size) > max_dim:
                     pil_img.thumbnail((max_dim, max_dim))
                 buf = io.BytesIO()
-                pil_img.save(buf, format="JPEG", quality=85)
+                pil_img.save(buf, format="JPEG", quality=80)
                 image_bytes = buf.getvalue()
                 mime_type = "image/jpeg"
                 logger.info(f"Normalized mobile image to JPEG: {len(image_bytes)} bytes ({pil_img.size})")

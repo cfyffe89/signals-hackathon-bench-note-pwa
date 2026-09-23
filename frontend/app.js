@@ -87,8 +87,8 @@ document.addEventListener("DOMContentLoaded", () => {
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        // Downscale large camera photos (e.g., 48MP / 15MB mobile photos) to fast ~150KB JPEG
-        const maxDim = 1280;
+        // Downscale large camera photos to fast ~40-60KB JPEG
+        const maxDim = 800;
         let width = img.width;
         let height = img.height;
         if (width > maxDim || height > maxDim) {
