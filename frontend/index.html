@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Signals BenchNote Copilot</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0284c7">
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              500: '#0284c7',
+              600: '#0369a1',
+              700: '#075985',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Prevent pull-to-refresh on mobile when recording */
+    body {
+      overscroll-behavior-y: contain;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .pulse-ring {
+      animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.05); }
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-sans">
+
+  <!-- TOP APP BAR -->
+  <header class="bg-slate-800/90 backdrop-blur border-b border-slate-700 sticky top-0 z-30 px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center font-bold text-white shadow-sm">
+        SN
+      </div>
+      <div>
+        <h1 class="text-sm font-bold text-white leading-tight">BenchNote Copilot</h1>
+        <p class="text-[10px] text-slate-400">Signals Mobile Assistant</p>
+      </div>
+    </div>
+    <div id="statusBadge" class="flex items-center gap-1.5 px-2 py-1 bg-slate-700/60 rounded-full text-[11px] text-slate-300 border border-slate-600">
+      <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+      <span id="statusText">Ready</span>
+    </div>
+  </header>
+
+  <!-- MAIN SCROLLABLE BODY -->
+  <main class="flex-1 max-w-md w-full mx-auto p-4 space-y-4 pb-24">
+
+    <!-- STEP 1: ACTIVE EXPERIMENT SELECTION -->
+    <div class="bg-slate-800 rounded-xl p-3.5 border border-slate-700 shadow-sm">
+      <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center justify-between">
+        <span>Target Experiment</span>
+        <button id="refreshExpBtn" class="text-brand-500 hover:text-brand-400 text-[11px] font-normal lowercase">↻ refresh</button>
+      </label>
+      <select id="experimentSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:ring-2 focus:ring-brand-500 focus:outline-none">
+        <option value="" disabled selected>Loading active experiments...</option>
+      </select>
+    </div>
+
+    <!-- STEP 2: BENCH CAPTURE CONTROLS (VOICE + CAMERA) -->
+    <div class="bg-slate-800 rounded-xl p-4 border border-slate-700 space-y-3.5 shadow-sm">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Bench Capture</span>
+        <button id="demoDataBtn" class="text-xs text-cyan-400 hover:text-cyan-300 font-medium">🧪 Load Demo Sample</button>
+      </div>
+
+      <!-- CAMERA TRIGGER & PREVIEW -->
+      <div class="space-y-2">
+        <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
+        
+        <div id="photoTriggerBox" class="border-2 border-dashed border-slate-600 rounded-xl p-3 text-center cursor-pointer hover:border-brand-500 hover:bg-slate-700/30 transition-colors">
+          <div id="photoPlaceholder" class="py-2 flex flex-col items-center gap-1.5">
+            <svg class="w-7 h-7 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span class="text-xs font-medium text-slate-300">Tap to Snap Bench Photo or TLC</span>
+            <span class="text-[10px] text-slate-500">Camera or Image Upload</span>
+          </div>
+
+          <!-- IMAGE PREVIEW CONTAINER (HIDDEN INITIALLY) -->
+          <div id="photoPreviewContainer" class="hidden relative">
+            <img id="photoPreview" class="w-full h-44 object-cover rounded-lg border border-slate-600" alt="Captured Bench Asset">
+            <button id="removePhotoBtn" class="absolute top-2 right-2 bg-rose-600/90 text-white rounded-full p-1.5 shadow hover:bg-rose-700">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- VOICE DICTATION BUTTON & LIVE TRANSCRIPT -->
+      <div class="space-y-2">
+        <button id="micBtn" class="w-full py-3 px-4 bg-slate-700 hover:bg-slate-600 text-white rounded-xl flex items-center justify-center gap-2.5 font-medium transition-all shadow">
+          <svg id="micIcon" class="w-5 h-5 text-rose-400" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clip-rule="evenodd" />
+          </svg>
+          <span id="micLabel" class="text-sm">Tap to Dictate Bench Notes</span>
+        </button>
+
+        <div class="relative">
+          <textarea id="transcriptInput" rows="3" placeholder="Spoken observations or type manual bench notes here..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-200 placeholder-slate-500 focus:ring-2 focus:ring-brand-500 focus:outline-none resize-none"></textarea>
+          <span id="charCount" class="absolute bottom-1.5 right-2 text-[10px] text-slate-500">0 words</span>
+        </div>
+      </div>
+
+      <!-- ANALYZE ACTION -->
+      <button id="analyzeBtn" class="w-full py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-semibold rounded-lg text-sm flex items-center justify-center gap-2 shadow-sm transition-colors">
+        <span>✨ Synthesize with Gemini Flash</span>
+      </button>
+    </div>
+
+    <!-- STEP 3: AI SYNTHESIS & PREVIEW CARD (HIDDEN INITIALLY) -->
+    <div id="aiResultCard" class="hidden bg-slate-800 rounded-xl p-4 border border-brand-500/40 space-y-3 shadow-lg">
+      <div class="flex items-center justify-between border-b border-slate-700 pb-2">
+        <span class="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+          AI Structured Observation
+        </span>
+        <span id="aiModelBadge" class="text-[10px] bg-slate-700 px-2 py-0.5 rounded text-slate-300">Gemini 2.0 Flash</span>
+      </div>
+
+      <div>
+        <label class="text-[10px] font-semibold uppercase text-slate-400">Title</label>
+        <input type="text" id="aiTitleInput" class="w-full bg-slate-900 border border-slate-700 rounded p-1.5 text-xs font-semibold text-white mt-1">
+      </div>
+
+      <!-- FLAGS / TAGS CONTAINER -->
+      <div id="aiBadgesContainer" class="flex flex-wrap gap-1.5"></div>
+
+      <!-- RICH PREVIEW OF HTML -->
+      <div>
+        <label class="text-[10px] font-semibold uppercase text-slate-400">Signals Rich Text Element Preview</label>
+        <div id="aiHtmlPreview" class="mt-1 p-3 bg-white text-slate-900 rounded-lg text-xs leading-relaxed max-h-52 overflow-y-auto border border-slate-300 shadow-inner">
+        </div>
+      </div>
+
+      <!-- COMMIT TO SIGNALS BUTTON -->
+      <button id="commitBtn" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition-colors">
+        <span>🚀 Commit to Signals Notebook</span>
+      </button>
+    </div>
+
+    <!-- SUCCESS MESSAGE CARD -->
+    <div id="successCard" class="hidden bg-emerald-950/80 border border-emerald-500/50 rounded-xl p-4 space-y-2 text-center">
+      <div class="w-10 h-10 bg-emerald-500 text-white rounded-full flex items-center justify-center mx-auto text-lg font-bold">✓</div>
+      <h3 class="text-sm font-bold text-emerald-200">Attached to Signals Notebook!</h3>
+      <p id="successDetail" class="text-xs text-emerald-300/80"></p>
+      <button id="newNoteBtn" class="mt-2 text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-4 py-1.5 rounded-lg font-medium">Record Another Note</button>
+    </div>
+
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
