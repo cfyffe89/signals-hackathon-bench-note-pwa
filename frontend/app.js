@@ -234,6 +234,11 @@ document.addEventListener("DOMContentLoaded", () => {
         aiTitleInput.value = analysis.title || "Bench Note Observation";
         aiHtmlPreview.innerHTML = analysis.structured_html || "<p>Observation synthesized.</p>";
 
+        const aiModelBadge = document.getElementById("aiModelBadge");
+        if (aiModelBadge && analysis.source) {
+          aiModelBadge.textContent = analysis.source;
+        }
+
         // Badges for flags and tags
         aiBadgesContainer.innerHTML = "";
         (analysis.flags || []).forEach(flag => {

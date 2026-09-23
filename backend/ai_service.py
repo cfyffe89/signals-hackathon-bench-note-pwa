@@ -4,6 +4,7 @@ import base64
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
+import requests
 from openai import OpenAI
 
 logger = logging.getLogger("ai_service")
@@ -12,20 +13,88 @@ class BenchNoteAIService:
     def __init__(self):
         self.gateway_url = os.getenv("AI_GATEWAY_URL", "https://signals-ai.revvity-hackathon.com/v1")
         self.api_key = os.getenv("AI_GATEWAY_KEY", "")
-        self.model = os.getenv("AI_MODEL", "gemini-2.0-flash")
+        self.model = os.getenv("AI_MODEL", "gemini-3.5-flash")
         self.mock_mode = (
             os.getenv("MOCK_MODE", "false").lower() == "true" 
             or not self.api_key 
-            or "sk-team" in self.api_key and "revvity-hackathon.com" in self.gateway_url
+            or ("sk-team" in self.api_key and "revvity-hackathon.com" in self.gateway_url)
         )
 
-        if not self.mock_mode and self.api_key:
+        self.is_gemini_key = (
+            self.api_key.startswith("AQ.") 
+            or self.api_key.startswith("AIza") 
+            or "generativelanguage.googleapis.com" in self.gateway_url
+        )
+
+        if not self.mock_mode and self.api_key and not self.is_gemini_key:
             self.client = OpenAI(
                 base_url=self.gateway_url,
-                api_key=self.api_key
+                api_key=self.api_key,
+                max_retries=1,
+                timeout=25.0
             )
         else:
             self.client = None
+
+    def _call_native_gemini(
+        self,
+        system_instruction: str,
+        transcript: str,
+        now_str: str,
+        image_bytes: Optional[bytes] = None,
+        mime_type: str = "image/jpeg"
+    ) -> Dict[str, Any]:
+        """Calls Google's native REST generateContent endpoint directly (fast, resilient, no 503 proxy latency)."""
+        parts = [
+            {"text": f"Observation Timestamp: {now_str}\n\nSpoken scientist dictation:\n\"{transcript}\"\n\nAnalyze the observations and visual evidence:"}
+        ]
+        if image_bytes:
+            b64_image = base64.b64encode(image_bytes).decode("utf-8")
+            parts.append({
+                "inlineData": {
+                    "mimeType": mime_type,
+                    "data": b64_image
+                }
+            })
+
+        payload = {
+            "system_instruction": {
+                "parts": [{"text": system_instruction}]
+            },
+            "contents": [{
+                "parts": parts
+            }],
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "temperature": 0.2
+            }
+        }
+
+        # Try fast, modern flash models in order
+        candidates = [self.model, "gemini-3.5-flash", "gemini-3.6-flash"]
+        # Filter out retired models like 2.0 / 2.5
+        candidates = [m for m in candidates if "2.0" not in m and "2.5" not in m] or ["gemini-3.5-flash"]
+        # Deduplicate preserving order
+        models_to_try = list(dict.fromkeys(candidates))
+
+        last_error = None
+        for current_model in models_to_try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_model}:generateContent?key={self.api_key}"
+            try:
+                res = requests.post(url, json=payload, timeout=25)
+                if res.status_code == 200:
+                    text_out = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+                    parsed = json.loads(text_out)
+                    parsed["source"] = f"{current_model} (native)"
+                    return parsed
+                else:
+                    last_error = f"HTTP {res.status_code}: {res.text[:150]}"
+                    logger.warning(f"Native model {current_model} returned {last_error}")
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Native model {current_model} failed ({e})")
+
+        raise RuntimeError(f"All native Gemini models failed: {last_error}")
 
     def analyze_observation(
         self,
@@ -40,7 +109,7 @@ class BenchNoteAIService:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # Fallback / Mock simulation if no live API gateway available
-        if self.mock_mode or not self.client:
+        if self.mock_mode:
             logger.info("Generating simulated AI observation (Mock / Offline Mode)")
             return self._generate_mock_analysis(transcript, bool(image_bytes), now_str)
 
@@ -59,6 +128,15 @@ class BenchNoteAIService:
             "}"
         )
 
+        # Path A: Direct Google Gemini API (preferred for Google keys, bypasses 503 proxy)
+        if self.is_gemini_key:
+            try:
+                return self._call_native_gemini(system_instruction, transcript, now_str, image_bytes, mime_type)
+            except Exception as e:
+                logger.error(f"Native Gemini synthesis failed: {e}. Falling back to mock synthesis.")
+                return self._generate_mock_analysis(transcript, bool(image_bytes), now_str, error=str(e))
+
+        # Path B: Standard OpenAI-compatible gateway (e.g., Hackathon LiteLLM Gateway)
         user_content = []
         user_content.append({
             "type": "text",
@@ -74,29 +152,39 @@ class BenchNoteAIService:
                 }
             })
 
-        models_to_try = [self.model]
-        if "gemini-3.6-flash" not in models_to_try:
-            models_to_try.append("gemini-3.6-flash")
+        models_to_try = [self.model, "gemini-3.5-flash", "gemini-3.6-flash"]
+        models_to_try = list(dict.fromkeys([m for m in models_to_try if "2.0" not in m and "2.5" not in m] or ["gemini-3.5-flash"]))
 
         last_error = None
-        for current_model in models_to_try:
-            try:
-                response = self.client.chat.completions.create(
-                    model=current_model,
-                    messages=[
-                        {"role": "system", "content": system_instruction},
-                        {"role": "user", "content": user_content}
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.2,
-                )
-                content = response.choices[0].message.content
-                return json.loads(content)
-            except Exception as e:
-                last_error = e
-                logger.warning(f"Model {current_model} failed ({e}), attempting next candidate...")
+        if self.client:
+            for current_model in models_to_try:
+                try:
+                    response = self.client.chat.completions.create(
+                        model=current_model,
+                        messages=[
+                            {"role": "system", "content": system_instruction},
+                            {"role": "user", "content": user_content}
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=0.2,
+                    )
+                    content = response.choices[0].message.content
+                    parsed = json.loads(content)
+                    parsed["source"] = f"{current_model} (gateway)"
+                    return parsed
+                except Exception as e:
+                    last_error = e
+                    logger.warning(f"Gateway model {current_model} failed ({e}), attempting next candidate...")
 
-        logger.error(f"All AI Gateway models failed: {last_error}. Falling back to mock synthesis.")
+        # If gateway failed but user key might be a Gemini key, try native Gemini as last resort
+        if self.api_key:
+            try:
+                logger.info("Attempting native Gemini fallback after gateway error...")
+                return self._call_native_gemini(system_instruction, transcript, now_str, image_bytes, mime_type)
+            except Exception as e:
+                logger.warning(f"Native Gemini fallback also failed: {e}")
+
+        logger.error(f"All AI options failed: {last_error}. Falling back to mock synthesis.")
         return self._generate_mock_analysis(transcript, bool(image_bytes), now_str, error=str(last_error))
 
     def _generate_mock_analysis(
